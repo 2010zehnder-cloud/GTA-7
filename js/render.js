@@ -138,7 +138,28 @@ function getChunk(cx, cy) {
 // ---------- Licht-Ebene ----------
 const light = document.createElement('canvas');
 const lctx = light.getContext('2d');
-function resizeLight() { light.width = Math.max(1, Math.ceil(VW / 2)); light.height = Math.max(1, Math.ceil(VH / 2)); }
+const LS = 0.35; // Auflösung der Licht-Ebene
+function resizeLight() { light.width = Math.max(1, Math.ceil(VW * LS)); light.height = Math.max(1, Math.ceil(VH * LS)); }
+
+// Vorgerenderte Sprites statt Farbverläufe in jedem Bild
+function makeGlow(r, g, b) {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const grd = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, `rgba(${r},${g},${b},1)`); grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  x.fillStyle = grd; x.fillRect(0, 0, 64, 64);
+  return c;
+}
+const SPR = { white: makeGlow(0, 0, 0), warm: makeGlow(255, 190, 90), blue: makeGlow(60, 120, 255), red: makeGlow(255, 40, 40) };
+SPR.trees = [[56, 112, 48], [70, 125, 52], [45, 98, 50]].map(base => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), r = 30;
+  g.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`; g.beginPath(); g.arc(32, 32, r, 0, 6.29); g.fill();
+  g.fillStyle = `rgba(${base[0] + 40},${base[1] + 45},${base[2] + 25},0.8)`; g.beginPath(); g.arc(32 - r * 0.3, 32 - r * 0.3, r * 0.55, 0, 6.29); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.12)'; g.beginPath(); g.arc(32 + r * 0.35, 32 + r * 0.3, r * 0.45, 0, 6.29); g.fill();
+  return c;
+});
+SPR.shadow = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.arc(32, 32, 30, 0, 6.29); g.fill(); return c; })();
 
 function darkness() {
   const h = G.clock;
@@ -154,7 +175,14 @@ let CX = 0, CY = 0;
 const projX = (x, z) => x + (x - CX) * z;
 const projY = (y, z) => y + (y - CY) * z;
 
+const shadeCache = new Map();
 function shade(hex, f) {
+  const key = hex + f;
+  let v = shadeCache.get(key);
+  if (v === undefined) { v = shadeRaw(hex, f); shadeCache.set(key, v); }
+  return v;
+}
+function shadeRaw(hex, f) {
   let c = hex.replace('#', '');
   if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
   const n = parseInt(c, 16);
@@ -422,16 +450,10 @@ function drawCheckpoint(g, b) {
 
 function drawTree(g, t) {
   const z = 0.045;
-  g.fillStyle = 'rgba(0,0,0,0.22)';
-  g.beginPath(); g.arc(t.x + 6, t.y + 6, t.r, 0, 6.29); g.fill();
-  const x = projX(t.x, z), y = projY(t.y, z), r = t.r * (1 + z);
-  const base = t.hue < 0.33 ? [56, 112, 48] : t.hue < 0.66 ? [70, 125, 52] : [45, 98, 50];
-  g.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`;
-  g.beginPath(); g.arc(x, y, r, 0, 6.29); g.fill();
-  g.fillStyle = `rgba(${base[0] + 40},${base[1] + 45},${base[2] + 25},0.8)`;
-  g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, 6.29); g.fill();
-  g.fillStyle = 'rgba(0,0,0,0.12)';
-  g.beginPath(); g.arc(x + r * 0.35, y + r * 0.3, r * 0.45, 0, 6.29); g.fill();
+  const s1 = t.r * 64 / 60;
+  g.drawImage(SPR.shadow, t.x + 6 - s1, t.y + 6 - s1, s1 * 2, s1 * 2);
+  const x = projX(t.x, z), y = projY(t.y, z), s2 = s1 * (1 + z);
+  g.drawImage(SPR.trees[t.hue < 0.33 ? 0 : t.hue < 0.66 ? 1 : 2], x - s2, y - s2, s2 * 2, s2 * 2);
 }
 
 // ---------- Fahrzeuge & Figuren ----------
@@ -618,17 +640,17 @@ function render() {
     if (!c.siren || c.driver !== 'police') continue;
     if (c.x < vx0 - 100 || c.x > vx1 + 100 || c.y < vy0 - 100 || c.y > vy1 + 100) continue;
     const on = Math.floor(G.time * 8 + c.lightT) % 2 === 0;
-    const grd = ctx.createRadialGradient(c.x, c.y, 2, c.x, c.y, 70);
-    grd.addColorStop(0, on ? 'rgba(60,120,255,0.55)' : 'rgba(255,40,40,0.35)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grd; ctx.fillRect(c.x - 70, c.y - 70, 140, 140);
+    ctx.globalAlpha = on ? 0.55 : 0.35;
+    ctx.drawImage(on ? SPR.blue : SPR.red, c.x - 70, c.y - 70, 140, 140);
   }
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 function drawNight(dk, camX, camY, z) {
-  const lw = light.width, lh = light.height, s = 0.5 * z;
+  const lw = light.width, lh = light.height, s = LS * z;
   lctx.setTransform(1, 0, 0, 1, 0, 0);
   lctx.globalCompositeOperation = 'source-over';
   lctx.clearRect(0, 0, lw, lh);
@@ -639,9 +661,8 @@ function drawNight(dk, camX, camY, z) {
   const hw = VW / 2 / z, hh = VH / 2 / z;
   const glow = (x, y, r, a) => {
     if (x < camX - hw - r || x > camX + hw + r || y < camY - hh - r || y > camY + hh + r) return;
-    const grd = lctx.createRadialGradient(x, y, 0, x, y, r);
-    grd.addColorStop(0, `rgba(0,0,0,${a})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
-    lctx.fillStyle = grd; lctx.fillRect(x - r, y - r, r * 2, r * 2);
+    lctx.globalAlpha = a;
+    lctx.drawImage(SPR.white, x - r, y - r, r * 2, r * 2);
   };
   for (const l of World.lamps) glow(l.x, l.y, 95, 0.75);
   for (const c of G.cars) {
@@ -653,6 +674,7 @@ function drawNight(dk, camX, camY, z) {
   for (const p of G.particles) if (p.type === 'fire') glow(p.x, p.y, 40, 0.5);
   const p = G.player;
   glow(p.x, p.y, 60, 0.4);
+  lctx.globalAlpha = 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(light, 0, 0, canvas.width, canvas.height);
   // Warmes Laternenlicht
@@ -660,10 +682,10 @@ function drawNight(dk, camX, camY, z) {
   ctx.globalCompositeOperation = 'lighter';
   for (const l of World.lamps) {
     if (l.x < camX - hw - 50 || l.x > camX + hw + 50 || l.y < camY - hh - 50 || l.y > camY + hh + 50) continue;
-    const grd = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, 60);
-    grd.addColorStop(0, `rgba(255,190,90,${0.28 * dk})`); grd.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grd; ctx.fillRect(l.x - 60, l.y - 60, 120, 120);
+    ctx.globalAlpha = 0.28 * dk;
+    ctx.drawImage(SPR.warm, l.x - 60, l.y - 60, 120, 120);
   }
+  ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 }
 
@@ -728,9 +750,9 @@ const mini = document.getElementById('mini');
 const mctx = mini.getContext('2d');
 function drawMini() {
   const size = mini.clientWidth || 160;
-  if (mini.width !== size * DPR) { mini.width = size * DPR; mini.height = size * DPR; }
+  if (mini.width !== size * UIR) { mini.width = size * UIR; mini.height = size * UIR; }
   const g = mctx;
-  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.setTransform(UIR, 0, 0, UIR, 0, 0);
   g.fillStyle = '#1b3644'; g.fillRect(0, 0, size, size);
   const p = G.player, q = p.car || p;
   const scale = 2.6; // px pro Kachel
@@ -771,9 +793,9 @@ function drawBigMap() {
   const pad = 24;
   const sc = Math.min((box.width - pad * 2) / MW, (box.height - pad * 2 - 40) / MH);
   const w = MW * sc, h = MH * sc;
-  c.width = w * DPR; c.height = h * DPR; c.style.width = w + 'px'; c.style.height = h + 'px';
+  c.width = w * UIR; c.height = h * UIR; c.style.width = w + 'px'; c.style.height = h + 'px';
   const g = c.getContext('2d');
-  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.setTransform(UIR, 0, 0, UIR, 0, 0);
   g.imageSmoothingEnabled = false;
   g.drawImage(mapImg, 0, 0, w, h);
   g.textAlign = 'center'; g.textBaseline = 'middle';

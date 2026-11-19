@@ -23,3 +23,4 @@ Ein GTA-artiges Open-World-Spiel im Browser, das in Berlin spielt (Draufsicht, r
 | Shift | Rennen |
 | K | Stadtplan |
 | H / M / P | Hupe / Ton / Pause |
+| G | Grafik hoch / mittel / niedrig |

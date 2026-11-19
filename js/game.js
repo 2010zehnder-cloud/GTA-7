@@ -11,8 +11,10 @@ function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1]; // 0=Ost 1=Süd 2=West 3=Nord
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-let VW = 0, VH = 0, DPR = 1;
+const ctx = canvas.getContext('2d', { alpha: false });
+let VW = 0, VH = 0, DPR = 1, UIR = 1;
+let quality = 1; // wird bei Ruckeln automatisch gesenkt
+let fpsFrames = 0, fpsTime = 0, lowStreak = 0;
 
 // ------------------------------------------------------------
 //  Fahrzeugmodelle
@@ -400,14 +402,31 @@ function computeFlow() {
   dist.fill(1e9);
   const cost = World.cost;
   // Binärer Heap
-  const heap = [];
-  const push = (k, d) => { heap.push([d, k]); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (heap[pa][0] <= heap[i][0]) break; [heap[pa], heap[i]] = [heap[i], heap[pa]]; i = pa; } };
-  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  // Binärer Heap auf typisierten Arrays (keine Garbage-Collection-Ruckler)
+  if (!G.heapK) { G.heapK = new Int32Array(N * 4); G.heapD = new Float32Array(N * 4); }
+  const HK = G.heapK, HD = G.heapD;
+  let hn = 0;
+  const push = (k, d) => {
+    if (hn >= HK.length) return;
+    let i = hn++;
+    while (i > 0) { const pa = (i - 1) >> 1; if (HD[pa] <= d) break; HK[i] = HK[pa]; HD[i] = HD[pa]; i = pa; }
+    HK[i] = k; HD[i] = d;
+  };
+  let popK = 0, popD = 0;
+  const pop = () => {
+    popK = HK[0]; popD = HD[0];
+    hn--;
+    if (hn > 0) {
+      const k = HK[hn], d = HD[hn]; let i = 0;
+      for (;;) { const l = 2 * i + 1; if (l >= hn) break; let m = l; if (l + 1 < hn && HD[l + 1] < HD[l]) m = l + 1; if (HD[m] >= d) break; HK[i] = HK[m]; HD[i] = HD[m]; i = m; }
+      HK[i] = k; HD[i] = d;
+    }
+  };
   const s = sy * MW + sx;
   dist[s] = 0; push(s, 0);
   const maxD = 400;
-  while (heap.length) {
-    const [d, k] = pop();
+  while (hn > 0) {
+    pop(); const d = popD, k = popK;
     if (d > dist[k] || d > maxD) continue;
     const x = k % MW, y = (k / MW) | 0;
     for (let n = 0; n < 4; n++) {
@@ -1213,6 +1232,14 @@ function frame(now) {
   else if (G.state === 'title') { G.cam.x += dt * 25; G.clock += dt * 0.02; }
   render();
   updateHUD(dt);
+  // Automatische Qualitätsanpassung, wenn der Rechner nicht hinterherkommt
+  fpsFrames++; fpsTime += (now - (frame.prev || now)) / 1000; frame.prev = now;
+  if (fpsTime > 1.5) {
+    const fps = fpsFrames / fpsTime;
+    if (autoGfx && fps < 50 && quality > 0.5) { lowStreak++; if (lowStreak >= 1) { quality = Math.max(0.5, quality - 0.15); resize(); lowStreak = 0; } }
+    else lowStreak = 0;
+    fpsFrames = 0; fpsTime = 0;
+  }
   requestAnimationFrame(frame);
 }
 
@@ -1292,10 +1319,21 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyH' && G.player.car) Sound.horn();
   if (e.code === 'KeyK' || e.code === 'Tab') toggleMap();
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  if (e.code === 'KeyG') cycleGraphics();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
+const GFX = [['Hoch', 1], ['Mittel', 0.72], ['Niedrig', 0.5]];
+let gfxIdx = 0, autoGfx = true;
+try { const v = localStorage.getItem('kiezkings-gfx'); if (v !== null) { gfxIdx = +v % 3; quality = GFX[gfxIdx][1]; autoGfx = false; } } catch (e) { }
+function cycleGraphics() {
+  gfxIdx = (gfxIdx + 1) % 3; quality = GFX[gfxIdx][1]; autoGfx = false;
+  try { localStorage.setItem('kiezkings-gfx', gfxIdx); } catch (e) { }
+  resize();
+  const b = document.getElementById('btn-gfx'); if (b) b.textContent = 'Grafik: ' + GFX[gfxIdx][0];
+  toast('Grafik: ' + GFX[gfxIdx][0], 1.5);
+}
 function togglePause() {
   if (G.state === 'shop') { closeShop(); return; }
   if (G.state === 'play') { G.state = 'pause'; document.getElementById('pause').hidden = false; }
@@ -1342,8 +1380,11 @@ function setupTouch() {
 //  Start
 // ------------------------------------------------------------
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
   VW = window.innerWidth; VH = window.innerHeight;
+  UIR = Math.min(window.devicePixelRatio || 1, 2);
+  // Interne Render-Auflösung: max. ~1,5 Megapixel, danach hochskalieren
+  const budget = Math.sqrt(1.5e6 / Math.max(1, VW * VH));
+  DPR = Math.max(0.35, Math.min(1, budget) * quality);
   canvas.width = Math.round(VW * DPR); canvas.height = Math.round(VH * DPR);
   canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
   resizeLight();
@@ -1379,6 +1420,8 @@ function init() {
   document.getElementById('btn-start').addEventListener('click', startGame);
   if (resumed && G.missionIdx > 0) document.getElementById('btn-start').textContent = 'Weiterspielen';
   document.getElementById('btn-resume').addEventListener('click', togglePause);
+  document.getElementById('btn-gfx').addEventListener('click', cycleGraphics);
+  document.getElementById('btn-gfx').textContent = 'Grafik: ' + (autoGfx ? 'Automatisch' : GFX[gfxIdx][0]);
   document.getElementById('btn-reset').addEventListener('click', () => {
     try { localStorage.removeItem('kiezkings-save'); } catch (e) { }
     location.reload();
