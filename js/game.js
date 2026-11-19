@@ -11,7 +11,7 @@ function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; wh
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1]; // 0=Ost 1=Süd 2=West 3=Nord
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d', { alpha: false });
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
 let VW = 0, VH = 0, DPR = 1, UIR = 1;
 let quality = 1; // wird bei Ruckeln automatisch gesenkt
 let fpsFrames = 0, fpsTime = 0, lowStreak = 0;
@@ -131,7 +131,7 @@ function updateCarPhysics(c, dt) {
 
   if (th > 0) {
     if (vf < -10) vf += 700 * th * dt;
-    else if (vf < maxV) vf += m.acc * th * dt * (1 - Math.max(0, vf) / maxV * 0.6);
+    else if (vf < maxV) vf += m.acc * (c.driver === 'player' ? 1.5 : 1) * th * dt * (1 - Math.max(0, vf) / maxV * 0.6);
   } else if (th < 0) {
     if (vf > 10) vf -= 650 * -th * dt;
     else if (vf > -maxV * 0.35) vf -= m.acc * 0.7 * -th * dt;
@@ -149,9 +149,9 @@ function updateCarPhysics(c, dt) {
   // Reifenspuren
   c.skidOn = Math.abs(vl) > 90 || (c.handbrake && Math.abs(vf) > 80) || (th < 0 && vf > 150);
 
-  const steerF = clamp(vf / 110, -1, 1);
+  const steerF = clamp(vf / 55, -1, 1);
   const targetAv = c.steer * m.turn * steerF * (c.handbrake ? 1.45 : 1);
-  c.av += (targetAv - c.av) * Math.min(1, 10 * dt);
+  c.av += (targetAv - c.av) * Math.min(1, (c.driver === 'player' ? 22 : 10) * dt);
 
   c.vx = fx * vf - fy * vl;
   c.vy = fy * vf + fx * vl;
@@ -699,7 +699,7 @@ function updatePlayerDriving(dt) {
     c.throttle = (up ? 1 : 0) - (down ? 1 : 0);
     if (touch.gas) c.throttle = 1;
     ix = (right ? 1 : 0) - (left ? 1 : 0);
-    c.steer = lerp(c.steer, ix, Math.min(1, dt * 12));
+    c.steer = lerp(c.steer, ix, Math.min(1, dt * 30));
   }
   G.player.x = c.x; G.player.y = c.y;
 }
@@ -1184,7 +1184,7 @@ function respawn(poi, cost) {
   G.wanted = 0; G.evadeT = 0; G.bustT = 0;
   G.cops = [];
   G.cars = G.cars.filter(c => c.driver !== 'police');
-  G.cam.x = p.x; G.cam.y = p.y;
+  G.cam.x = p.x; G.cam.y = p.y; G.cam.snap = false;
   save();
 }
 
@@ -1210,10 +1210,13 @@ function shake(a) { shakeAmt = Math.min(18, shakeAmt + a); }
 
 function updateCamera(dt) {
   const p = G.player, q = p.car || p;
-  const vx = q.vx || 0, vy = q.vy || 0;
-  const tx = q.x + vx * 0.45, ty = q.y + vy * 0.45;
-  G.cam.x = lerp(G.cam.x, tx, Math.min(1, dt * 3.5));
-  G.cam.y = lerp(G.cam.y, ty, Math.min(1, dt * 3.5));
+  // Kamera klebt direkt am Spieler; nur im Auto schaut sie langsam etwas nach vorne
+  const vx = p.car ? q.vx : 0, vy = p.car ? q.vy : 0;
+  const la = G.cam.la || (G.cam.la = { x: 0, y: 0 });
+  la.x = lerp(la.x, vx * 0.22, Math.min(1, dt * 1.8));
+  la.y = lerp(la.y, vy * 0.22, Math.min(1, dt * 1.8));
+  if (G.cam.snap) { G.cam.x = q.x + la.x; G.cam.y = q.y + la.y; }
+  else { G.cam.x = lerp(G.cam.x, q.x + la.x, Math.min(1, dt * 6)); G.cam.y = lerp(G.cam.y, q.y + la.y, Math.min(1, dt * 6)); if (Math.hypot(G.cam.x - q.x - la.x, G.cam.y - q.y - la.y) < 2) G.cam.snap = true; }
   const base = clamp(Math.min(VW, VH) / 760, 0.62, 1.25);
   const spd = p.car ? carSpeed(p.car) : 0;
   const tz = base * (1 - clamp(spd / 500, 0, 1) * 0.25);
@@ -1398,7 +1401,7 @@ function startGame() {
   document.getElementById('hud').hidden = false;
   G.state = 'play';
   const p = G.player;
-  G.cam.x = p.x; G.cam.y = p.y;
+  G.cam.x = p.x; G.cam.y = p.y; G.cam.snap = false;
   last = performance.now();
   if (G.missionIdx === 0) startMission(0);
   else toast('Willkommen zurück! Gelbes M auf der Karte = nächste Mission.', 4);
