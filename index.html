@@ -1,0 +1,236 @@
+<meta charset="utf-8">
+<title>Kiez Kings Berlin</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Barlow+Condensed:wght@500;600;800&display=swap">
+<style>
+  /* Layout: Vollbild-Canvas, HUD als schwebende Ebenen an den Bildschirmrändern */
+  :root {
+    --asphalt: #14161b;
+    --paper: #f1ede4;
+    --gelb: #f5c400;     /* Berliner Bus-Gelb */
+    --rot: #e2231a;
+    --blau: #2d6cdf;
+    --glas: rgba(14, 16, 22, 0.72);
+    --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --ui: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--asphalt); color: var(--paper); font-family: var(--ui); overflow: hidden;
+    -webkit-user-select: none; user-select: none; touch-action: none; }
+  #game { position: fixed; inset: 0; display: block; }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  .tl { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    display: flex; flex-direction: column; gap: 6px; }
+  #money { font-family: var(--display); font-weight: 900; font-size: 34px; line-height: 1; color: #7be38b;
+    text-shadow: 0 2px 0 #000, 0 0 12px rgba(0,0,0,.6); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+  .bar { width: 150px; height: 9px; background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.25); border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: linear-gradient(90deg, #d9342b, #ff6b5a); transition: width .2s; }
+  #carbar i { background: linear-gradient(90deg, #5aa0ff, #a6d0ff); }
+  .lbl { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; opacity: .7; margin-bottom: -3px; }
+
+  .tr { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  #stars { display: flex; gap: 3px; font-size: 26px; line-height: 1; }
+  #stars span { color: rgba(255,255,255,.18); text-shadow: 0 2px 0 #000; }
+  #stars span.on { color: var(--paper); }
+  #stars span.on.blink { color: rgba(255,255,255,.35); }
+  #stars.pop { animation: pop .5s; }
+  @keyframes pop { 0% { transform: scale(1.5); } 100% { transform: scale(1); } }
+  #clock { font-family: var(--display); font-weight: 700; font-size: 22px; text-shadow: 0 2px 0 #000; font-variant-numeric: tabular-nums; }
+
+  .tc { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(560px, calc(100% - 380px)); }
+  #objective { background: var(--glas); border-left: 4px solid var(--gelb); padding: 6px 12px; font-size: 18px; font-weight: 600;
+    text-align: center; text-wrap: balance; }
+  #timer { font-family: var(--display); font-weight: 900; font-size: 30px; color: var(--gelb); text-shadow: 0 2px 0 #000; font-variant-numeric: tabular-nums; }
+  #timer.low { color: var(--rot); animation: pop 1s infinite; }
+
+  #mini { position: absolute; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: 160px; height: 160px; border-radius: 50%; border: 3px solid rgba(241,237,228,.85); box-shadow: 0 4px 18px rgba(0,0,0,.6); }
+  .loc { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    text-align: right; text-shadow: 0 2px 0 #000; display: flex; flex-direction: column; align-items: flex-end; }
+  #district { font-family: var(--display); font-weight: 900; font-size: 30px; letter-spacing: .03em; text-transform: uppercase; line-height: 1; }
+  #street { font-size: 16px; opacity: .85; }
+  #speed { font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--gelb); font-variant-numeric: tabular-nums; min-height: 1em; }
+
+  #hint { position: absolute; left: 50%; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    background: var(--glas); padding: 5px 12px; border-radius: 3px; font-size: 17px; font-weight: 600; }
+  #toast { position: absolute; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 10px);
+    width: min(640px, calc(100% - 32px)); text-align: center; font-size: 20px; font-weight: 600; line-height: 1.3;
+    color: #fff; text-shadow: 0 2px 0 #000, 0 0 8px #000; opacity: 0; transition: opacity .3s, transform .3s; text-wrap: balance; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #msg { position: absolute; top: 34%; left: 0; right: 0; text-align: center; opacity: 0; transition: opacity .4s; }
+  #msg.show { opacity: 1; }
+  #msg .mt { font-family: var(--display); font-weight: 900; font-size: clamp(44px, 9vw, 92px); color: var(--gelb);
+    text-transform: uppercase; line-height: .95; text-shadow: 0 4px 0 #000, 0 0 30px rgba(0,0,0,.6); letter-spacing: .01em; }
+  #msg.bad .mt { color: var(--rot); }
+  #msg .ms { font-size: 24px; font-weight: 600; text-shadow: 0 2px 0 #000; margin-top: 6px; }
+  #dmg { position: absolute; inset: 0; box-shadow: inset 0 0 120px rgba(226,35,26,.8); opacity: 0; }
+  #dmg.on { animation: dmg .5s; }
+  @keyframes dmg { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* Karte */
+  #bigmap { position: fixed; inset: 0; background: rgba(10,12,16,.92); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; z-index: 5; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  #bigmap h2 { margin: 0; font-family: var(--display); font-weight: 900; font-size: 30px; letter-spacing: .05em; }
+  #bigmap canvas { border: 3px solid var(--paper); box-shadow: 0 10px 40px #000; max-width: 100%; }
+  #bigmap p { margin: 0; opacity: .7; font-size: 15px; }
+
+  /* Titel & Pause */
+  .screen { position: fixed; inset: 0; z-index: 10; display: flex; align-items: safe center; justify-content: center;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: linear-gradient(180deg, rgba(20,22,27,.35) 0%, rgba(20,22,27,.88) 70%); overflow-y: auto; }
+  .card { max-width: 560px; width: 100%; padding-block: 24px; }
+  .kicker { font-size: 15px; letter-spacing: .3em; text-transform: uppercase; color: var(--gelb); font-weight: 600; }
+  h1 { font-family: var(--display); font-weight: 900; font-size: clamp(64px, 16vw, 132px); line-height: .82; margin: 6px 0 4px;
+    text-transform: uppercase; letter-spacing: -.01em; text-shadow: 0 6px 0 #000; text-wrap: balance; }
+  h1 em { font-style: normal; color: var(--gelb); }
+  .tag { font-size: 20px; font-weight: 500; opacity: .9; margin: 0 0 18px; max-width: 46ch; }
+  .controls { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 16px; margin: 0 0 22px;
+    background: var(--glas); padding: 12px 16px; border-left: 4px solid var(--gelb); }
+  .controls kbd { font-family: var(--ui); font-weight: 800; color: var(--gelb); letter-spacing: .04em; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  button.big { font-family: var(--display); font-weight: 900; font-size: 30px; text-transform: uppercase; letter-spacing: .04em;
+    background: var(--gelb); color: #111; border: 0; padding: 10px 28px 8px; cursor: pointer; box-shadow: 0 5px 0 #8a6d00; }
+  button.big:hover { filter: brightness(1.08); }
+  button.big:active { transform: translateY(3px); box-shadow: 0 2px 0 #8a6d00; }
+  button.ghost { background: transparent; color: var(--paper); box-shadow: inset 0 0 0 2px var(--paper); font-size: 22px; }
+  button:focus-visible { outline: 3px solid var(--blau); outline-offset: 3px; }
+  .touchnote { font-size: 15px; opacity: .7; margin-top: 14px; }
+
+  /* Lidl */
+  #shop { background: rgba(10,14,24,.88); }
+  .shopcard { max-width: 620px; }
+  .shophead { display: flex; align-items: center; gap: 14px; margin-bottom: 12px; }
+  .lidl-sign { flex: none; width: 74px; height: 74px; border-radius: 50%; background: #ffe500; border: 4px solid #e60a14;
+    box-shadow: 0 0 0 4px #0a4fa6; display: grid; place-items: center; font-family: var(--display); font-weight: 900; font-size: 26px; color: #0a4fa6; }
+  .shopstats { font-size: 18px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  #shop-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+  .item { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; text-align: left; cursor: pointer;
+    background: #f4f2ec; color: #111; border: 0; border-left: 5px solid #0a4fa6; padding: 8px 10px; font-family: var(--ui); min-width: 0; }
+  .item:hover:not(:disabled) { background: #fff; }
+  .item:disabled { opacity: .45; cursor: not-allowed; }
+  .item .ic { font-size: 24px; text-align: center; }
+  .item .tx { display: flex; flex-direction: column; min-width: 0; }
+  .item b { font-size: 17px; }
+  .item small { font-size: 13px; opacity: .75; }
+  .item .pr { font-family: var(--display); font-weight: 900; font-size: 24px; background: #ffe500; color: #e60a14; padding: 0 8px;
+    transform: rotate(-3deg); font-variant-numeric: tabular-nums; }
+  #shop-note { min-height: 1.3em; font-size: 17px; margin: 12px 0; color: #ffe500; }
+
+  /* Touch */
+  #touch { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+  #joy { position: absolute; left: max(24px, calc(env(safe-area-inset-left, 0px) + 12px)); bottom: calc(190px + env(safe-area-inset-bottom, 0px));
+    width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.3); pointer-events: auto; touch-action: none; }
+  #knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(241,237,228,.75); }
+  .tbtns { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+    display: grid; grid-template-columns: repeat(2, 64px); gap: 10px; pointer-events: auto; }
+  .tbtns button { width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); background: rgba(14,16,22,.6);
+    color: var(--paper); font-family: var(--ui); font-weight: 800; font-size: 15px; touch-action: none; }
+  .tbtns #b-enter { background: rgba(245,196,0,.85); color: #111; }
+
+  @media (max-width: 700px) {
+    #money { font-size: 26px; } .bar { width: 110px; }
+    .tc { top: calc(88px + env(safe-area-inset-top, 0px)); width: calc(100% - 32px); }
+    #objective { font-size: 15px; }
+    #mini { width: 120px; height: 120px; }
+    #district { font-size: 22px; } #street { font-size: 13px; }
+    #toast { font-size: 16px; bottom: calc(320px + env(safe-area-inset-bottom, 0px)); }
+    #hint { bottom: calc(320px + env(safe-area-inset-bottom, 0px)); }
+    #stars { font-size: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #stars.pop, #timer.low, #dmg.on { animation: none; } }
+</style>
+
+<canvas id="game"></canvas>
+
+<div id="hud" hidden>
+  <div class="tl">
+    <div id="money">500 €</div>
+    <div class="lbl">Gesundheit</div>
+    <div class="bar"><i id="hp" style="width:100%"></i></div>
+    <div id="carbar" hidden><div class="lbl">Auto</div><div class="bar"><i id="carhp" style="width:100%"></i></div></div>
+  </div>
+  <div class="tr">
+    <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+    <div id="clock">09:30</div>
+  </div>
+  <div class="tc">
+    <div id="objective" hidden></div>
+    <div id="timer" hidden></div>
+  </div>
+  <canvas id="mini"></canvas>
+  <div class="loc"><span id="speed"></span><span id="district">Moabit</span><span id="street"></span></div>
+  <div id="hint" hidden></div>
+  <div id="toast"></div>
+  <div id="msg"></div>
+  <div id="dmg"></div>
+</div>
+
+<div id="bigmap" hidden>
+  <h2>BERLIN</h2>
+  <canvas id="bigmap-c"></canvas>
+  <p>Gelb = Auftrag · Blau = Lidl · Pink = Lackiererei · Klicken oder K zum Schließen</p>
+</div>
+
+<div id="touch" hidden>
+  <div id="joy"><div id="knob"></div></div>
+  <div class="tbtns">
+    <button id="b-map" aria-label="Karte">Karte</button>
+    <button id="b-horn" aria-label="Hupe">Hupe</button>
+    <button id="b-brake" aria-label="Handbremse">Bremse</button>
+    <button id="b-enter" aria-label="Ein- und Aussteigen">Ein/Aus</button>
+  </div>
+</div>
+
+<div id="title" class="screen">
+  <div class="card">
+    <div class="kicker">Ein Open-World-Spiel in Berlin</div>
+    <h1>Kiez <em>Kings</em></h1>
+    <p class="tag">Du kommst am Hauptbahnhof an, ohne Plan und mit 500 Euro. Dein Cousin Deniz hat Jobs für dich – von Döner-Lieferungen bis zum ganz großen Ding.</p>
+    <div class="controls">
+      <kbd>WASD / Pfeile</kbd><span>Laufen und Fahren</span>
+      <kbd>E</kbd><span>Ein- und Aussteigen, Autos klauen</span>
+      <kbd>Leertaste</kbd><span>Handbremse (driften!)</span>
+      <kbd>Shift</kbd><span>Rennen</span>
+      <kbd>K</kbd><span>Stadtplan</span>
+      <kbd>H · M · P</kbd><span>Hupe · Ton an/aus · Pause</span>
+    </div>
+    <div class="btns"><button class="big" id="btn-start">Los geht’s</button></div>
+    <p class="touchnote">Auf dem Handy: Joystick links, Knöpfe rechts. Ein Taxi gibt dir Nebenjobs, die Lackiererei löscht deine Fahndung.</p>
+  </div>
+</div>
+
+<div id="shop" class="screen" hidden>
+  <div class="card shopcard">
+    <div class="shophead">
+      <div class="lidl-sign">LIDL</div>
+      <div><div class="kicker">Filiale · Mo–Sa 7–22 Uhr</div><div class="shopstats">Geld: <b id="shop-money"></b> · Gesundheit: <b id="shop-hp"></b></div></div>
+    </div>
+    <div id="shop-list"></div>
+    <p id="shop-note"></p>
+    <div class="btns"><button class="big" id="btn-shop-close">Laden verlassen</button></div>
+  </div>
+</div>
+
+<div id="pause" class="screen" hidden>
+  <div class="card">
+    <div class="kicker">Pause</div>
+    <h1>Kurz<em> Luft holen</em></h1>
+    <div class="btns">
+      <button class="big" id="btn-resume">Weiter</button>
+      <button class="big ghost" id="btn-reset">Spielstand löschen</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/map.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/shop.js"></script>
+<script>init();</script>
