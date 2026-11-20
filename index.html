@@ -124,7 +124,7 @@
 
   /* Touch */
   #touch { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
-  #joy { position: absolute; left: max(24px, calc(env(safe-area-inset-left, 0px) + 12px)); bottom: calc(190px + env(safe-area-inset-bottom, 0px));
+  #joy { cursor: grab; position: absolute; left: max(24px, calc(env(safe-area-inset-left, 0px) + 12px)); bottom: calc(190px + env(safe-area-inset-bottom, 0px));
     width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.3); pointer-events: auto; touch-action: none; }
   #knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(241,237,228,.75); }
   .tbtns { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(110px + env(safe-area-inset-bottom, 0px));
@@ -200,9 +200,11 @@
       <kbd>K</kbd><span>Stadtplan</span>
       <kbd>H · M · P</kbd><span>Hupe · Ton an/aus · Pause</span>
       <kbd>G</kbd><span>Grafik hoch / mittel / niedrig (bei Ruckeln)</span>
+      <kbd>J</kbd><span>Joystick auf dem Bildschirm ein/aus</span>
+      <kbd>Controller</kbd><span>Stick laufen/lenken · RT/LT Gas/Bremse · Y Einsteigen · B Handbremse · A Rennen</span>
     </div>
     <div class="btns"><button class="big" id="btn-start">Los geht’s</button></div>
-    <p class="touchnote">Auf dem Handy: Joystick links, Knöpfe rechts. Ein Taxi gibt dir Nebenjobs, die Lackiererei löscht deine Fahndung.</p>
+    <p class="touchnote">Joystick links (Finger oder Maus), Knöpfe rechts. Xbox- und PlayStation-Controller gehen auch. Ein Taxi gibt dir Nebenjobs, die Lackiererei löscht deine Fahndung.</p>
   </div>
 </div>
 
@@ -225,6 +227,7 @@
     <div class="btns">
       <button class="big" id="btn-resume">Weiter</button>
       <button class="big ghost" id="btn-gfx">Grafik: Automatisch</button>
+      <button class="big ghost" id="btn-joy">Joystick: an</button>
       <button class="big ghost" id="btn-reset">Spielstand löschen</button>
     </div>
   </div>

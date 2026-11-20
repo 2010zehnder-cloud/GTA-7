@@ -24,3 +24,5 @@ Ein GTA-artiges Open-World-Spiel im Browser, das in Berlin spielt (Draufsicht, r
 | K | Stadtplan |
 | H / M / P | Hupe / Ton / Pause |
 | G | Grafik hoch / mittel / niedrig |
+| J | Joystick auf dem Bildschirm ein/aus (mit Maus oder Finger bedienbar) |
+| Controller | Stick laufen/lenken, RT/LT Gas/Bremse, Y Einsteigen, B Handbremse, A Rennen, X Hupe |

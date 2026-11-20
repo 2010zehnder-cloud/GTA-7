@@ -643,9 +643,11 @@ function updatePlayerOnFoot(dt) {
   let ix = 0, iy = 0;
   if (keys.ArrowLeft || keys.KeyA) ix -= 1; if (keys.ArrowRight || keys.KeyD) ix += 1;
   if (keys.ArrowUp || keys.KeyW) iy -= 1; if (keys.ArrowDown || keys.KeyS) iy += 1;
-  if (touch.active) { ix = touch.jx; iy = touch.jy; }
+  let stick = false;
+  if (Math.hypot(touch.jx, touch.jy) > 0.08) { ix = touch.jx; iy = touch.jy; stick = true; }
+  else if (pad.on && Math.hypot(pad.x, pad.y) > 0.2) { ix = pad.x; iy = pad.y; stick = true; }
   const len = Math.hypot(ix, iy);
-  const sprint = keys.ShiftLeft || keys.ShiftRight || (touch.active && len > 0.9);
+  const sprint = keys.ShiftLeft || keys.ShiftRight || pad.sprint || (stick && len > 0.9);
   const boost = G.boostT > 0 ? 1.4 : 1;
   const spd = (sprint ? 165 : 95) * boost;
   if (len > 0.1) {
@@ -682,8 +684,12 @@ function updatePlayerDriving(dt) {
   let ix = 0, iy = 0;
   const up = keys.ArrowUp || keys.KeyW, down = keys.ArrowDown || keys.KeyS;
   const left = keys.ArrowLeft || keys.KeyA, right = keys.ArrowRight || keys.KeyD;
-  c.handbrake = !!(keys.Space || touch.brake);
-  if (touch.active && (Math.abs(touch.jx) > 0.15 || Math.abs(touch.jy) > 0.15)) {
+  c.handbrake = !!(keys.Space || touch.brake || pad.hb);
+  if (pad.on && (pad.gas > 0.05 || pad.brake > 0.05 || Math.abs(pad.x) > 0.15) && Math.hypot(touch.jx, touch.jy) < 0.15) {
+    // Controller: Stick lenkt, Trigger geben Gas / bremsen
+    c.throttle = pad.gas - pad.brake;
+    c.steer = lerp(c.steer, Math.abs(pad.x) > 0.12 ? pad.x : 0, Math.min(1, dt * 30));
+  } else if (Math.abs(touch.jx) > 0.15 || Math.abs(touch.jy) > 0.15) {
     // Absolute Lenkung per Joystick
     const want = Math.atan2(touch.jy, touch.jx);
     const mag = Math.min(1, Math.hypot(touch.jx, touch.jy));
@@ -1231,6 +1237,7 @@ let last = performance.now();
 function frame(now) {
   let dt = (now - last) / 1000; last = now;
   dt = Math.min(dt, 0.05);
+  pollPad();
   if (G.state === 'play') update(dt);
   else if (G.state === 'title') { G.cam.x += dt * 25; G.clock += dt * 0.02; }
   render();
@@ -1323,6 +1330,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyK' || e.code === 'Tab') toggleMap();
   if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
   if (e.code === 'KeyG') cycleGraphics();
+  if (e.code === 'KeyJ') toggleJoystick();
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -1344,12 +1352,48 @@ function togglePause() {
 }
 function toggleMap() { G.showMap = !G.showMap; document.getElementById('bigmap').hidden = !G.showMap; if (G.showMap) drawBigMap(); }
 
-// Touch-Steuerung
-function setupTouch() {
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+function toggleJoystick() {
   const tc = document.getElementById('touch');
-  if (!isTouch) return;
-  tc.hidden = false;
+  tc.hidden = !tc.hidden;
+  try { localStorage.setItem('kiezkings-joy', tc.hidden ? '0' : '1'); } catch (e) { }
+  const b = document.getElementById('btn-joy'); if (b) b.textContent = 'Joystick: ' + (tc.hidden ? 'aus' : 'an');
+  toast('Joystick ' + (tc.hidden ? 'ausgeblendet' : 'eingeblendet') + ' (J)', 1.5);
+}
+
+// Controller (Xbox / PlayStation) über die Gamepad-API
+const pad = { on: false, x: 0, y: 0, gas: 0, brake: 0, hb: false, sprint: false, prev: [] };
+window.addEventListener('gamepadconnected', () => { toast('Controller verbunden! Y/△ = Einsteigen, RT/LT = Gas/Bremse', 4); });
+function pollPad() {
+  let gp = null;
+  try { const list = navigator.getGamepads ? navigator.getGamepads() : []; for (const g of list) if (g && g.connected) { gp = g; break; } } catch (e) { }
+  if (!gp) { pad.on = false; return; }
+  pad.on = true;
+  const dz = v => Math.abs(v) < 0.15 ? 0 : v;
+  pad.x = dz(gp.axes[0] || 0); pad.y = dz(gp.axes[1] || 0);
+  const bv = i => gp.buttons[i] ? (gp.buttons[i].value || (gp.buttons[i].pressed ? 1 : 0)) : 0;
+  pad.gas = bv(7); pad.brake = bv(6);
+  pad.hb = bv(1) > 0.5 || bv(5) > 0.5;
+  pad.sprint = bv(0) > 0.5;
+  const pressed = i => bv(i) > 0.5 && !pad.prev[i];
+  if (pressed(0) || pressed(9) || pressed(3)) Sound.init();
+  if (G.state === 'title') { if (pressed(0) || pressed(9)) startGame(); }
+  else if (G.state === 'shop') { if (pressed(1) || pressed(9)) closeShop(); }
+  else if (G.state === 'pause') { if (pressed(9) || pressed(1)) togglePause(); }
+  else if (G.state === 'play') {
+    if (pressed(3)) tryEnterExit();
+    if (pressed(2) && G.player.car) Sound.horn();
+    if (pressed(8)) toggleMap();
+    if (pressed(9)) togglePause();
+  }
+  for (let i = 0; i < gp.buttons.length; i++) pad.prev[i] = bv(i) > 0.5;
+}
+
+// Touch-Steuerung (funktioniert auch mit der Maus)
+function setupTouch() {
+  const tc = document.getElementById('touch');
+  let show = true;
+  try { const v = localStorage.getItem('kiezkings-joy'); if (v !== null) show = v === '1'; } catch (e) { }
+  tc.hidden = !show;
   const joy = document.getElementById('joy'), knob = document.getElementById('knob');
   let jid = null, cx = 0, cy = 0;
   const R = 50;
@@ -1424,6 +1468,8 @@ function init() {
   if (resumed && G.missionIdx > 0) document.getElementById('btn-start').textContent = 'Weiterspielen';
   document.getElementById('btn-resume').addEventListener('click', togglePause);
   document.getElementById('btn-gfx').addEventListener('click', cycleGraphics);
+  document.getElementById('btn-joy').addEventListener('click', toggleJoystick);
+  document.getElementById('btn-joy').textContent = 'Joystick: ' + (document.getElementById('touch').hidden ? 'aus' : 'an');
   document.getElementById('btn-gfx').textContent = 'Grafik: ' + (autoGfx ? 'Automatisch' : GFX[gfxIdx][0]);
   document.getElementById('btn-reset').addEventListener('click', () => {
     try { localStorage.removeItem('kiezkings-save'); } catch (e) { }
